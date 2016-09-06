@@ -28,6 +28,12 @@ public class MainApplication extends Application {
                     public void change(List<App> apps) {
                         appsList = apps;
                         EventBus.getDefault().post(new ChangeAppsEvent(apps));
+                        AppProvider.instance.initFullAppInfo(apps, new Runnable() {
+                            @Override
+                            public void run() {
+                                EventBus.getDefault().post(new ChangeAppsEvent(appsList));
+                            }
+                        });
                     }
                 });
 

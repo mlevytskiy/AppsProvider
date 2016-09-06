@@ -5,11 +5,21 @@ import android.content.Intent;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
+import android.graphics.drawable.Drawable;
+import android.os.AsyncTask;
 import android.text.TextUtils;
 
+import java.io.File;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
+
+import wumf.com.appsprovider.util.FileGenerator;
+import wumf.com.appsprovider.util.SaveIconUtils;
 
 /**
  * Created by max on 02.09.16.
@@ -22,6 +32,9 @@ public class AppProvider {
     private Context context;
     private PackageManager pm;
     private String myAppPN;
+
+    private SaveIconUtils saveIconUtils;
+    private FileGenerator fileGenerator;
 
     private AppProvider() { }
 
@@ -38,23 +51,46 @@ public class AppProvider {
     public AppProvider setContext(Context context) {
         this.context = context;
         this.pm = context.getPackageManager();
+        saveIconUtils = new SaveIconUtils(context);
+        fileGenerator = new FileGenerator(context);
         return this;
     }
 
     public AppProvider initBaseInfo() {
         //load all apps without label and icon
         List<ResolveInfo> resolveInfos = getResolveInfos();
-        List<App> apps = resolveInfoToApp(resolveInfos);
+        Map<String, ResolveInfo> map = new HashMap<>();
+        List<App> apps = resolveInfoToApp(resolveInfos, map);
         List<App> limitedApps = new ArrayList<>();
         for (int i = apps.size()-1; i >= apps.size()-1-listener.appsCount; i--) {
             limitedApps.add(apps.get(i));
         }
+        listener.setMap(map);
         listener.change(limitedApps);
         return this;
     }
 
-    public AppProvider initFullAppInfo(List<App> apps, Runnable finishInit) {
-        //load label and icon if need
+    public AppProvider initFullAppInfo(final List<App> apps, final Runnable finishInit) {
+
+        new AsyncTask<Void, Void, Void>() {
+
+            @Override
+            protected Void doInBackground(Void... voids) {
+                for (App app : apps) {
+                    ResolveInfo ri = listener.getMap().get(app.appPackage);
+                    app.name = ri.loadLabel(pm).toString();
+                    app.icon = loadAndSaveIconInFile(pm, ri);
+                }
+                return null;
+            }
+
+            @Override
+            protected void onPostExecute(Void aVoid) {
+                super.onPostExecute(aVoid);
+                finishInit.run();
+            }
+        }.execute();
+
         return this;
     }
 
@@ -65,13 +101,15 @@ public class AppProvider {
         return appList;
     }
 
-    private List<App> resolveInfoToApp(List<ResolveInfo> list) {
+    private List<App> resolveInfoToApp(List<ResolveInfo> list, Map<String, ResolveInfo> map) {
         List<App> result = new ArrayList<>();
         long systemInstallDate = -1;
+        int i = 0;
         for (ResolveInfo resolveInfo : list) {
             if (TextUtils.equals(myAppPN, resolveInfo.activityInfo.packageName)) {
                 continue; //skip my app
             } else {
+                map.put(resolveInfo.activityInfo.packageName, resolveInfo);
                 result.add(resolveInfoToApp(resolveInfo));
             }
         }
@@ -83,6 +121,21 @@ public class AppProvider {
                 result.remove(app); //remove also some system apps
             }
         }
+
+        Collections.sort(result, new Comparator<App>() {
+            @Override
+            public int compare(App app1, App app2) {
+                if (app1.installDate == app2.installDate) {
+                    return 0;
+                }
+
+                if (app1.installDate > app2.installDate) {
+                    return 1;
+                } else {
+                    return -1;
+                }
+            }
+        });
 
         return result;
     }
@@ -100,6 +153,13 @@ public class AppProvider {
             e.printStackTrace();
         }
         return 0;
+    }
+
+    private String loadAndSaveIconInFile(PackageManager pm, ResolveInfo resolveInfo) {
+        Drawable drawable = resolveInfo.loadIcon(pm);
+        File file = fileGenerator.generate(resolveInfo);
+        saveIconUtils.saveInFile(file, drawable);
+        return file.getAbsolutePath();
     }
 
 }

@@ -7,8 +7,8 @@ public class App {
 
     public final String id;
     public final String appPackage;
-    public final String name;
-    public final String icon;
+    public String name;
+    public String icon;
     public final long installDate;
 
     public App(String id, String appPackage, String name, String icon, long installDate) {
